@@ -1,0 +1,8 @@
+COPYING
+GPL.txt
+Makefile.PL
+MANIFEST
+README
+t/Net-MAC.t
+lib/Net/MAC.pm
+META.yml                                 Module meta-data (added by MakeMaker)
