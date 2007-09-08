@@ -1,5 +1,5 @@
 # Net::MAC - Perl extension for representing and manipulating MAC addresses
-# Copyright (C) 2005 Karl Ward <karlward@cpan.org>
+# Copyright (C) 2005-2007 Karl Ward <karlward@cpan.org>
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,15 +17,21 @@
 
 package Net::MAC;
 
-use 5.008000;
+use 5.006000;
 use strict;
 use Carp;
 use warnings;
+use overload 
+	'""' => sub { return $_[0]->get_mac(); }, 
+	'==' => \&_compare_value,
+	'!=' => \&_compare_value_ne, 
+	'eq' => \&_compare_string,
+	'ne' => \&_compare_string_ne
+;
 
 # RCS ident string
-my $rcs_id = '$Id: MAC.pm,v 1.3 2005/10/14 04:28:48 karlward Exp $'; 
-#@rcs_id =~ split($rcs_id); our $VERSION = $rcs_id[2]; 
-our $VERSION = '1.1'; 
+#my $rcs_id = '$Id: MAC.pm,v 1.20 2007/01/27 05:40:47 karlward Exp $'; 
+our $VERSION = '1.2'; 
 our $AUTOLOAD; 
 
 # Constructor.
@@ -50,8 +56,9 @@ sub new {
 		'_mac' => undef, 
 		'_base' => 16, 
 		'_delimiter' => ':', 
-		'_bit_group' => 8, 
-#		'_zero_padded' => 1, 
+		'_bit_group' => 48, 
+		'_zero_padded' => 1, 
+		'_case' => 'upper', # FIXME: does IEEE specify upper?
 		'_groups' => undef, 
 		'_internal_mac' => undef, 
 		'_die' => 1, # die() on invalid MAC address format
@@ -61,6 +68,14 @@ sub new {
 # 
 # CLASS METHODS 
 # 
+	# Returns a copy of the instance.
+	sub _clone {
+		my ($self) = @_;
+		my ($clone) = { %$self }; # No need for deep copying here.  
+		bless($clone, ref $self);
+		return($clone);
+	}
+
 	# Verify that an attribute is valid (called by the AUTOLOAD sub)
 	sub _accessible {
 		my ($self, $name) = @_;
@@ -105,6 +120,23 @@ sub new {
 			return(0); # FIXME: die() here?
 		}
 	} 
+	
+	# Preset formats we will accept for use by ->convert, via ->as_foo
+	my %_format_for = (
+		Cisco => {base => 16, bit_group => 16, delimiter => '.' },
+		IEEE => { base => 16, bit_group => 8, delimiter => ':', zero_padded => 1, case => 'upper' },
+		Microsoft => { base => 16, bit_group => 8, delimiter => '-', case => 'upper' },
+		Sun => { base => 16, bit_group => 8, delimiter => '.', zero_padding => 0, case => 'lower' }
+	);
+	sub _format { 
+		my ($identifier) = @_; 
+		my $format = $_format_for{$identifier}; 
+		if ((defined $format) && (%$format)) { 
+			return(%$format); 
+		} 
+		else { return(undef); } 
+	}
+
 } # End closure 
 
 # Automatic accessor methods via AUTOLOAD
@@ -124,6 +156,10 @@ sub Net::MAC::AUTOLOAD {
 		$self->{$1} = $value;
 		return; 
 	} 
+	if ($AUTOLOAD =~ /.*::as_(\w+)/ && $_[0]->_format($1)) {
+		*{$AUTOLOAD} = sub { return $_[0]->convert($_[0]->_format($1)) };
+		return($self->convert($_[0]->_format($1)));
+	}
 	croak "No such method: $AUTOLOAD";
 }
 
@@ -145,6 +181,9 @@ sub _discover {
 	if (!(defined $mac)) { 
 		$self->error("discovery of MAC address metadata failed, no MAC address supplied"); 
 	} 
+	elsif (!($mac =~ /[a-fA-F0-9]/)) { # Doesn't have hex/dec numbers
+		$self->error("discovery of MAC address metadata failed, no meaningful characters in $mac"); 
+	}
 	elsif ($mac =~ /[^:\.\-\sa-fA-F0-9]/) {
 		$self->error("discovery of MAC address metadata failed, invalid characters in MAC address \"$mac\""); 
 	} 
@@ -152,7 +191,9 @@ sub _discover {
 	unless ($self->get_delimiter()) { $self->_find_delimiter(); } 
 	unless ($self->get_base()) { $self->_find_base(); } 
 	unless ($self->get_bit_group()) { $self->_find_bit_group(); } 
+	unless ($self->get_zero_padded()) { $self->_find_zero_padded(); }
 	$self->_write_internal_mac(); 
+	$self->_check_internal_mac(); 
 	return(1); 
 } 
 
@@ -162,10 +203,12 @@ sub _find_delimiter {
 	my $mac = $self->get_mac();
 	if ($mac =~ /(:|\.|\-|\s)/g) { # Found a delimiter 
 		$self->set_delimiter($1); 
+		$self->verbose("setting attribute \"delimiter\" to \"$1\""); 
 		return(1); 
 	} 
 	else { 
 		$self->set_delimiter(undef); 
+		$self->verbose("setting attribute \"delimiter\" to undef"); 
 		return(1); 
 	} 
 	$self->error("internal Net::MAC failure for MAC \"$mac\""); 
@@ -220,18 +263,23 @@ sub _find_bit_group {
 			my $t_bg = 48 / $n; 
 			if (($t_bg == 8) || ($t_bg == 16)) { 
 				$self->set_bit_group($t_bg); 
+				$self->verbose("setting attribute \"bit_group\" to \"$t_bg\""); 
 				return(1); 
 			} 
+			else { 
+				$self->error("invalid MAC address format: $mac"); 
+				return(0); 
+			}
 		} 	
 	} 
 	else { # No delimiter, bit grouping is 48 bits
 		# Sanity check the length of the MAC address in characters
 		if (length($mac) != 12) { 
-			$self->error("invalid MAC format, not 16 characters in MAC \"$mac\""); 
+			$self->error("invalid MAC format, not 12 characters in hexadecimal MAC \"$mac\""); 
 			return(0); 
 		}
 		else { 
-			$self->set_bit_group(48); 
+			$self->_default('bit_group'); 
 			return(1); 
 		}
 	}
@@ -239,10 +287,25 @@ sub _find_bit_group {
 	$self->error("invalid MAC address format \"$mac\""); 
 } 
 
-# FIXME: unimplemented
+# FIXME: untested
 # Find whether this MAC address has zero-padded bit groups 
 sub _find_zero_padded { 
 	my ($self) = @_;
+	# Zero-padding is only allowed for 8 bit grouping
+	unless ($self->get_bit_group() && ($self->get_bit_group() == 8)) { 
+		return(0); # False 
+	} 
+	my $delimiter = $self->get_delimiter(); 
+	if ($delimiter eq ' ') { $delimiter = '\s'; } 
+	my @groups = split(/$delimiter/, $self->get_mac()); 
+	foreach my $group (@groups) { 
+		if ($group =~ /^0./) { 
+			$self->set_zero_padded(1); 
+			return(1); # True, zero-padded group. 
+		}
+	}
+	$self->set_zero_padded(0); 
+	return(0); # False, if we got this far.
 } 
 
 # Write an internal representation of the MAC address. 
@@ -262,8 +325,18 @@ sub _write_internal_mac {
 	else { @groups = $mac; } 
 	# Hex base
 	if ((defined $self->get_base()) && ($self->get_base() == 16)) {
-		my $imac = join('', @groups); 
-		$self->set_internal_mac($imac); 
+		my $bit_group; 
+		if (defined $self->get_bit_group() ) { 
+			$bit_group = $self->get_bit_group(); 
+		} 
+		else { $bit_group = 48; } 
+		my ($chars) = $bit_group / 4; 
+		my ($internal_mac); 
+		foreach my $element (@groups) { 
+			my $format = '%0' . $chars . 's';
+			$internal_mac .= sprintf($format, $element); 
+		}
+		$self->set_internal_mac($internal_mac); 
 		return(1); 
 	} 
 	else { # Decimal base
@@ -286,6 +359,22 @@ sub _write_internal_mac {
 	return(0); # FIXME: die() here? 
 } 
 
+# Check the internal MAC address for errors (last check)
+sub _check_internal_mac { 
+	my ($self) = @_; 
+	if (!defined($self->get_internal_mac())) { 
+		my $mac = $self->get_mac();
+		$self->error("invalid MAC address \"$mac\""); 
+		return(0); 
+	}
+	elsif (length($self->get_internal_mac()) != 12) { 
+		my $mac = $self->get_mac(); 
+		$self->error("invalid MAC address \"$mac\""); 
+		return(0)
+	}
+	else { return(1) }
+}
+
 # Convert a MAC address object into a different format 
 sub convert { 
 	my ($self, %arg) = @_; 
@@ -298,6 +387,12 @@ sub convert {
 	no integer; 
 	while ($offset < length($imac)) { 
 		my $group = substr($imac, $offset, $size);
+		if (	($bit_group == 8) 
+			&& (exists $arg{zero_padded}) 
+			&& ($arg{zero_padded} != 0) 
+		) { 
+			$group =~ s/^0//;
+		}
 		push(@groups, $group); 
 		$offset += $size; 
 	} 
@@ -312,7 +407,7 @@ sub convert {
 		@groups = @dec_groups; 
 	}
 	my $mac_string; 
-	if ($arg{'delimiter'} =~ /:|\-|\.|\s/) { 
+	if ((exists $arg{delimiter}) && ($arg{delimiter} =~ /:|\-|\.|\s/ )) { 
 		#warn "\nconvert delimiter $arg{'delimiter'}\n"; 
 		#my $delimiter = $arg{'delimiter'}; 
 		#$delimiter =~ s/(:|\-|\.)/\\$1/; 
@@ -324,12 +419,58 @@ sub convert {
 	}
 	# Construct the argument list for the new Net::MAC object
 	$arg{'mac'} = $mac_string; 
-	foreach my $test (keys %arg) { 
-		#warn "\nconvert arg $test is $arg{$test}\n"; 
-	}
+#	foreach my $test (keys %arg) { 
+#		warn "\nconvert arg $test is $arg{$test}\n"; 
+#	}
 	my $new_mac = Net::MAC->new(%arg); 
 	return($new_mac); 
 } 
+
+# Overloading the == operator (numerical comparison)
+sub _compare_value { 
+	my ($arg_1, $arg_2, $reversed) = @_; 
+	my ($mac_1, $mac_2); 
+	if (UNIVERSAL::isa($arg_2, 'Net::MAC')) { 
+		$mac_2 = $arg_2->get_internal_mac();
+	}
+	else { 
+		my $temp = Net::MAC->new(mac => $arg_2); 
+		$mac_2 = $temp->get_internal_mac(); 
+	} 
+	$mac_1 = $arg_1->get_internal_mac(); 
+	if ($mac_1 eq $mac_2) { return(1); } 
+	else { return(0); }
+}
+
+# Overloading the != operator (numeric comparison)
+sub _compare_value_ne { 
+	my ($arg_1, $arg_2) = @_; 
+	if ($arg_1 == $arg_2) { return(0); } 
+	else { return(1); } 
+}
+
+# Overloading the eq operator (string comparison) 
+sub _compare_string { 
+	my ($arg_1, $arg_2, $reversed) = @_; 
+	my ($mac_1, $mac_2);
+	if (UNIVERSAL::isa($arg_2, 'Net::MAC')) {
+		$mac_2 = $arg_2->get_mac(); 
+	} 
+	else { 
+		my $temp = Net::MAC->new(mac => $arg_2);
+		$mac_2 = $temp->get_mac(); 
+	} 
+	$mac_1 = $arg_1->get_mac(); 
+	if ($mac_1 eq $mac_2) { return(1); }
+	else { return(0); } 
+}
+
+# Overloading the ne operator (string comparison)
+sub _compare_string_ne { 
+	my ($arg_1, $arg_2) = @_; 
+	if ($arg_1 eq $arg_2) { return(0); } 
+	else { return(1); } 
+}
 
 # Print verbose messages about internal workings of this class
 sub verbose { 
@@ -379,17 +520,17 @@ Net::MAC - Perl extension for representing and manipulating MAC addresses
 	  'delimiter' => '.' 	# dot-delimited
   ); 
 
-  print $dec_mac->get_mac(), "\n"; # Should print 8.32.0.171.205.239
+  print "$dec_mac\n"; # Should print 8.32.0.171.205.239
 
   # Example: find out whether a MAC is base 16 or base 10
   my $base = $mac->get_base();
   if ($base == 16) { 
-	  print $mac->get_mac(), " is in hexadecimal format\n"; 
+	  print "$mac is in hexadecimal format\n"; 
   } 
   elsif ($base == 10) { 
-	  print $mac->get_mac(), " is in decimal format\n"; 
+	  print "$mac is in decimal format\n"; 
   }
-  else { die "This MAC is invalid"; } 
+  else { die "This MAC is neither base 10 nor base 16"; } 
 
 =head1 DESCRIPTION
 
@@ -398,6 +539,7 @@ This is a module that allows you to
   - store a MAC address in a Perl object
   - find out information about a stored MAC address
   - convert a MAC address into a specified format
+  - easily compare two MAC addresses for string or numeric equality
 
 There are quite a few different ways that MAC addresses may be represented 
 in textual form.  The most common is arguably colon-delimited octets in 
@@ -406,9 +548,9 @@ likely to encounter addresses that are dot-delimited 16-bit groups in
 hexadecimal form.  In the Windows world, addresses are usually 
 dash-delimited octets in hexadecimal form.  MAC addresses in a Sun ethers 
 file are usually non-zero-padded, colon-delimited hexadecimal octets.  And 
-sometimes, you come across the totally insane dot-delimited octets in 
-decimal form (certain Cisco SNMP MIBS actually use this). Hence the need 
-for a common way to represent and manipulate MAC addresses in Perl.  
+sometimes, you come across dot-delimited octets in decimal form (certain 
+Cisco SNMP MIBS actually use this). Hence the need for a common way to 
+represent and manipulate MAC addresses in Perl.  
 
 There is a surprising amount of complexity involved in converting MAC 
 addresses between types.  This module does not attempt to understand all 
@@ -428,6 +570,9 @@ The new() method creates a new Net::MAC object.  Possible arguments are
 		possible values: : - . space
   bit_group	the number of bits between each delimiter 
 		possible values: 8 16 48
+  zero_padded	whether bit groups have leading zero characters
+  		(Net::MAC only allows zero-padding for bit groups of 8 bits)
+  		possible values: 0 1 
   verbose	write informational messages (useful for debugging)
 		possible values: 0 1
   die		die() on invalid MAC address (default is to die on invalid MAC) 
@@ -490,6 +635,18 @@ no delimiters at all:
   0820.00ab.cdef	# get_bit_group() returns 16
   082000abcdef		# get_bit_group() returns 48, no delimiters at all
 
+=head3 get_zero_padded() method
+
+Returns a boolean value indicating whether or not the bit groups are 
+zero-padded.  A return value of 0 (false) means that the bit groups are not 
+zero-padded, and a return value of 1 (true) means that they are zero-padded: 
+
+  00.80.02.ac.4f.ff	# get_zero_padded() returns 1
+  0:80:2:ac:4f:ff	# get zero_padded() returns 0
+  0.125.85.122.155.64	# get_zero_padded() returns 0 
+
+Net::MAC only allows bit groups of 8 bits to be zero-padded.  
+
 =head2 convert() method 
 
 Convert an already-defined Net::MAC object into a different MAC address 
@@ -503,6 +660,73 @@ or the numeric base.
           'delimiter' => '.'    # dot-delimited
   );
 
+=head2 Conversion to common formats
+
+The most common formats have shortcut conversion methods that can be used 
+instead of the convert() method with its many options.  
+
+=head3 as_Cisco() method 
+
+Cisco routers seem to usually represent MAC addresses in hexadecimal, 
+dot-delimited, 16 bit groups.  
+
+  my $mac = Net::MAC->new(mac => '00-02-03-AA-AB-FF'); 
+  my $cisco_mac = $mac->as_Cisco(); 
+  print "$cisco_mac"; 
+  # should print 0002.03aa.abff
+
+=head3 as_IEEE() method
+
+The IEEE 802 2001 specification represents MAC addresses in hexadecimal, 
+colon-delimited, upper case, 8 bit groups.  
+
+  my $mac = Net::MAC->new(mac => '00-02-03-AA-AB-FF'); 
+  my $IEEE_mac = Net::MAC->as_IEEE(); 
+  print "$IEEE_mac"; 
+  # should print 00:02:03:AA:AB:FF
+
+=head3 as_Microsoft() method 
+
+Microsoft usually represents MAC addresses in hexadecimal, dash delimited, 
+upper case, 8 bit groups. 
+
+  my $mac = Net::MAC->new(mac => '00:02:03:AA:AB:FF'); 
+  my $microsoft_mac = $mac->as_Microsoft(); 
+  print "$microsoft_mac"; 
+  # should print 00-02-03-AA-AB-FF
+
+=head3 as_Sun() method
+
+Sun represents MAC addresses in hexadecimal, colon-delimited, 
+non-zero-padded, lower case, 8 bit groups.  
+
+  my $mac = Net::MAC->new(mac => '00-02-03-AA-AB-FF'); 
+  my $sun_mac = $mac->as_Sun(); 
+  print "$sun_mac"; 
+  # should print 0:2:3:aa:ab:ff
+
+=head2 Stringification
+
+The stringification operator "" has been overloaded to allow for the 
+meaningful use of the instance variable in a string.  
+
+  my $mac = Net::MAC->new(mac => '00:0a:23:4f:ff:ef'); 
+  print "object created for MAC address $mac"; 
+  # Should print:
+  # object created for MAC address 00:0a:23:4f:ff:ef
+
+=head2 MAC address comparison
+
+The Perl operators 'eq' and 'ne' (string comparison) and '==' '!=' (numeric 
+comparison) have been overloaded to allow simple, meaningful comparisons of 
+two MAC addresses.  
+
+Example (two MAC addresses numerically identical but in different formats): 
+
+  my $d = Net::MAC->new(mac => '0.8.1.9.16.16', base => 10); 
+  my $h = Net::MAC->new(mac => '00:08:01:0A:10:10', base => 16); 
+  if ($d == $h) { print "$d and $h are numerically equal"; } 
+  if ($d ne $h) { print " but $d and $h are not the same string"; } 
 
 =head1 BUGS 
 
@@ -530,7 +754,7 @@ Example:
   You supply '8.32.0.171.205.239' and you want '8:20:0:ab:cd:ef'.  
   Net::MAC gives you '08:20:00:ab:cd:ef' and a kick in the face. 
 
-I'll probably add support for configurable zero-padding.  
+Support for configurable zero-padding is forthcoming.  
 
 =head1 SEE ALSO
 
@@ -541,9 +765,13 @@ Net::MAC::Vendor
 
 Karl Ward E<lt>karlward@cpan.orgE<gt>
 
+=head1 CONTRIBUTORS 
+
+Oliver Gorwits, Robin Crook
+
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005 Karl Ward E<lt>karlward@cpan.orgE<gt>
+Copyright (C) 2005-2007 Karl Ward E<lt>karlward@cpan.orgE<gt>
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

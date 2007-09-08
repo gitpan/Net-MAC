@@ -1,15 +1,15 @@
-# $Id: Net-MAC.t,v 1.2 2005/10/13 17:06:59 karlward Exp $
+# $Id: Net-MAC.t,v 1.3 2007/09/08 13:37:04 karlward Exp $
 
 # Before `make install' is performed this script should be runnable with
 # `make test'. After `make install' it should work as `perl Net-MAC.t'
 
 #########################
 
-use Test::More tests => 126;
-#use Test::More qw(no_plan); # FIXME
+use Test::More tests => 142; 
 BEGIN { use_ok('Net::MAC') };
 
-# Creating a base 16 Net::MAC object
+# Creating base 16 Net::MAC objects
+my @macs = ();	
 my $hex_mac = Net::MAC->new('mac' => '08:20:00:AB:CD:EF'); 
 ok($hex_mac); 
 ok($hex_mac->get_mac() eq '08:20:00:AB:CD:EF'); 
@@ -137,11 +137,14 @@ foreach my $test_mac (@mac) {
 } 
 
 diag("testing some invalid MAC addresses"); 
-my @invalid_mac = ('99.6', '888:76.12', '1', '000000000000000000111111', '256.256.256.256.256.256', '128.123.123.234.345.456', 'abcdefghijkl'); 
+no warnings; 
+my @invalid_mac = (':::::', ' : : : : : ', '..', '\s\s\s\s\s', '-----', '---', ' - - ', ' ', '99.6', '888:76.12', '1', '000000000000000000111111', '256.256.256.256.256.256', '128.123.123.234.345.456', 'abcdefghijkl'); 
 foreach my $invalid_mac (@invalid_mac) { 
 	my $no_die = Net::MAC->new(mac => $invalid_mac, die => 0); 
 	ok($no_die, "testing 'die' attribute"); 
-	#diag("invalid MAC is $invalid_mac\n");
+	diag("testing invalid MAC $invalid_mac\n");
 	ok($no_die->get_error(), "testing get_error() method"); 
 	#diag($no_die->get_error());
-} 
+}
+use warnings;
+
