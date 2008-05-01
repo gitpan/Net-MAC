@@ -29,8 +29,8 @@ use overload
     'ne' => \&_compare_string_ne;
 
 # RCS ident string
-#my $rcs_id = '$Id: MAC.pm 139 2008-03-30 18:41:33Z oliver $';
-our $VERSION = '1.3';
+#my $rcs_id = '$Id: MAC.pm 157 2008-05-01 14:02:34Z oliver $';
+our $VERSION = '1.4';
 our $AUTOLOAD;
 
 # Constructor.
@@ -418,7 +418,7 @@ sub convert {
     my ( $self, %arg ) = @_;
     my $imac = $self->get_internal_mac();
     my @groups;
-    my $bit_group = $arg{'bit_group'} || 8;    # FIXME: ?
+    my $bit_group = $arg{'bit_group'} || 8; # not _default value
     my $offset = 0;
     use integer;
     my $size = $bit_group / 4;
@@ -456,6 +456,10 @@ sub convert {
 
         #warn "\nconvert groups @groups\n";
     }
+    elsif ($bit_group != 48) {
+        # use default delimiter
+        $mac_string = join( ':', @groups );
+    } 
     else {
         $mac_string = join( '', @groups );
     }
@@ -709,6 +713,13 @@ or the numeric base.
           'bit_group' => 16,    # 16 bit grouping
           'delimiter' => '.'    # dot-delimited
   );
+
+Note that if any of the above arguments are not provided, they will be set to
+the following default values:
+
+ base       16
+ bit_group  8  (i.e. a delimiter will be used)
+ delimiter  :
 
 =head2 Conversion to common formats
 
