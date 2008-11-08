@@ -1,10 +1,22 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         Net-MAC
-version:      1.4
-version_from: lib/Net/MAC.pm
-installdirs:  site
-requires:
-
+---
+abstract: 'Perl extension for representing and manipulating MAC addresses '
+author:
+  - 'Karl Ward <karlward@cpan.org>'
+build_requires:
+  Test::More: 0
+  Test::Pod: 0
+  Test::Pod::Coverage: 0
 distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.30_01
+generated_by: 'Module::Install version 0.77'
+license: gpl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Net-MAC
+no_index:
+  directory:
+    - inc
+    - t
+requires:
+  perl: 5.8.1
+version: 1.5

@@ -29,8 +29,11 @@ use overload
     'ne' => \&_compare_string_ne;
 
 # RCS ident string
-#my $rcs_id = '$Id: MAC.pm 157 2008-05-01 14:02:34Z oliver $';
-our $VERSION = '1.4';
+#my $rcs_id = '$Id: MAC.pm 283 2008-11-08 17:47:16Z oliver $';
+
+our $VERSION = '1.5';
+$VERSION = eval $VERSION; # numify for warning-free dev releases
+
 our $AUTOLOAD;
 
 # Constructor.
@@ -554,7 +557,7 @@ sub error {
     return (1);
 }
 
-1;                                     # Necessary for use statement
+1;                                     # Necessary for usage statement
 
 __END__
 
