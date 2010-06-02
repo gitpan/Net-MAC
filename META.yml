@@ -7,8 +7,8 @@ build_requires:
   Test::Pod: 0
   Test::Pod::Coverage: 0
 distribution_type: module
-generated_by: 'Module::Install version 0.77'
-license: gpl
+generated_by: 'Module::Install version 0.76'
+license: unknown
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
   version: 1.4
@@ -19,4 +19,4 @@ no_index:
     - t
 requires:
   perl: 5.8.1
-version: 1.5
+version: 1.6

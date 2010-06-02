@@ -29,9 +29,9 @@ use overload
     'ne' => \&_compare_string_ne;
 
 # RCS ident string
-#my $rcs_id = '$Id: MAC.pm 283 2008-11-08 17:47:16Z oliver $';
+#my $rcs_id = '$Id: MAC.pm 765 2010-06-02 09:50:18Z oliver $';
 
-our $VERSION = '1.5';
+our $VERSION = '1.6';
 $VERSION = eval $VERSION; # numify for warning-free dev releases
 
 our $AUTOLOAD;

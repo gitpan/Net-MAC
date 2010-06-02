@@ -1,4 +1,4 @@
-# $Id: 10_convert_args.t 250 2008-11-06 20:58:23Z oliver $
+# $Id: 10_convert_args.t 765 2010-06-02 09:50:18Z oliver $
 
 use Test::More tests => 5;
 #use Test::More qw(no_plan);
@@ -10,11 +10,11 @@ my $mac = eval{ Net::MAC->new(mac => $macaddr) };
 isa_ok($mac, 'Net::MAC');
 
 my $mac_defaults = $mac->convert;
-is($mac_defaults, '01:ab:01:ab:01:ab', 'convert() using defaults');
+is("$mac_defaults", '01:ab:01:ab:01:ab', 'convert() using defaults');
 
 my $mac_bitgroup = $mac->convert(bit_group => 8);
-is($mac_bitgroup, '01:ab:01:ab:01:ab', 'convert() using bit_group and default delimiter');
+is("$mac_bitgroup", '01:ab:01:ab:01:ab', 'convert() using bit_group and default delimiter');
 
 my $mac_bitgroup_delim = $mac->convert(bit_group => 12, delimiter => '-');
-is($mac_bitgroup_delim, '01a-b01-ab0-1ab', 'convert() using bit_group 12 and hyphen delimiter');
+is("$mac_bitgroup_delim", '01a-b01-ab0-1ab', 'convert() using bit_group 12 and hyphen delimiter');
 
