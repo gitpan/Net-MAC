@@ -1,4 +1,4 @@
-# $Id: Net-MAC.t 135 2008-03-30 18:20:42Z oliver $
+# $Id$
 
 # Before `make install' is performed this script should be runnable with
 # `make test'. After `make install' it should work as `perl Net-MAC.t'

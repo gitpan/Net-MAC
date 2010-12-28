@@ -4,19 +4,22 @@ author:
   - 'Karl Ward <karlward@cpan.org>'
 build_requires:
   Test::More: 0
-  Test::Pod: 0
-  Test::Pod::Coverage: 0
-distribution_type: module
-generated_by: 'Module::Install version 0.76'
-license: unknown
+configure_requires:
+  ExtUtils::MakeMaker: 6.31
+dynamic_config: 0
+generated_by: 'Dist::Zilla version 4.200000, CPAN::Meta::Converter version 2.102400'
+license: gpl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
   version: 1.4
 name: Net-MAC
-no_index:
-  directory:
-    - inc
-    - t
 requires:
-  perl: 5.8.1
-version: 1.6
+  Carp: 0
+  integer: 0
+  overload: 0
+  perl: 5.006000
+resources:
+  bugtracker: https://rt.cpan.org/Public/Dist/Display.html?Name=Net-MAC
+  homepage: http://github.com/ollyg/Net-MAC/wiki
+  repository: git://github.com/ollyg/Net-MAC.git
+version: 1.103621

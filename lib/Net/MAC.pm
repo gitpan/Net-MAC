@@ -16,6 +16,9 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 package Net::MAC;
+BEGIN {
+  $Net::MAC::VERSION = '1.103621';
+}
 
 use 5.006000;
 use strict;
@@ -27,12 +30,6 @@ use overload
     '!=' => \&_compare_value_ne,
     'eq' => \&_compare_string,
     'ne' => \&_compare_string_ne;
-
-# RCS ident string
-#my $rcs_id = '$Id: MAC.pm 765 2010-06-02 09:50:18Z oliver $';
-
-our $VERSION = '1.6';
-$VERSION = eval $VERSION; # numify for warning-free dev releases
 
 our $AUTOLOAD;
 
@@ -69,6 +66,38 @@ sub new {
         '_verbose'      => 0
     );
 
+    # new formats supplied by the user are stored here
+    my %_user_format_for = ();
+
+    # Preset formats we will accept for use by ->convert, via ->as_foo
+    my %_format_for = (
+        Cisco => {
+            base => 16,
+            bit_group => 16,
+            delimiter => '.',
+        },
+        IEEE  => {
+            base        => 16,
+            bit_group   => 8,
+            delimiter   => ':',
+            zero_padded => 1,
+            case        => 'upper',
+        },
+        Microsoft => {
+            base => 16,
+            bit_group => 8,
+            delimiter => '-',
+            case => 'upper',
+        },
+        Sun => {
+            base        => 16,
+            bit_group   => 8,
+            delimiter   => ':',
+            zero_padded => 0,
+            case        => 'lower'
+        }
+    );
+
     #
     # CLASS METHODS
     #
@@ -101,6 +130,22 @@ sub new {
 
         # Set the '_die' attribute to default at the first
         $self->_default('die');
+
+        # passed a "format" as shorthand for the specific vars
+        if (exists $arg{'format'}) {
+            my $f;
+
+            $f = $_format_for{$arg{'format'}}
+                if exists $_format_for{$arg{'format'}};
+            $f = $_user_format_for{$arg{'format'}}
+                if exists $_user_format_for{$arg{'format'}};
+
+            %arg = (%arg, %$f)
+                if (defined $f and ref $f eq 'HASH');
+
+            delete $arg{'format'};
+        }
+
         foreach my $key ( keys %_attrs ) {
             $key =~ s/^_+//;
             if ( ( defined $arg{$key} ) && ( $self->_accessible("_$key") ) ) {
@@ -129,37 +174,39 @@ sub new {
         }
     }
 
-    # Preset formats we will accept for use by ->convert, via ->as_foo
-    my %_format_for = (
-        Cisco => { base => 16, bit_group => 16, delimiter => '.' },
-        IEEE  => {
-            base        => 16,
-            bit_group   => 8,
-            delimiter   => ':',
-            zero_padded => 1,
-            case        => 'upper'
-        },
-        Microsoft =>
-            { base => 16, bit_group => 8, delimiter => '-', case => 'upper' },
-        Sun => {
-            base        => 16,
-            bit_group   => 8,
-            delimiter   => ':',
-            zero_padded => 0,
-            case        => 'lower'
-        }
-    );
-
     sub _format {
         my ( $self, $identifier ) = @_;
-        my $format = $_format_for{$identifier};
-        if ( ( defined $format ) && (%$format) ) {
-            return (%$format);
+
+        # built-ins first
+        if (exists $_format_for{$identifier}
+            and ref $_format_for{$identifier} eq 'HASH') {
+            return %{$_format_for{$identifier}};
         }
-        else { return (undef); }
+
+        # then user-supplied
+        if (exists $_user_format_for{$identifier}
+            and ref $_user_format_for{$identifier} eq 'HASH') {
+            return %{$_user_format_for{$identifier}};
+        }
+
+        return (undef);
+    }
+
+    # program in a new custom MAC address format supplied by the user
+    sub _set_format_for {
+        my ($self, $identifier, $format) = @_;
+        croak "missing identifier for custom format\n"
+            unless defined $identifier and length $identifier;
+        croak "missing HASH ref custom format\n"
+            unless defined $format and ref $format eq 'HASH';
+
+        $_user_format_for{$identifier} = $format;
     }
 
 }    # End closure
+
+# program in a new custom MAC address format supplied by the user
+sub set_format_for { goto &_set_format_for }
 
 # Automatic accessor methods via AUTOLOAD
 # See Object Oriented Perl, 3.3, Damian Conway
@@ -213,7 +260,8 @@ sub _discover {
             "discovery of MAC address metadata failed, no meaningful characters in $mac"
         );
     }
-    elsif ( $mac =~ /[^:\.\-\sa-fA-F0-9]/ ) {
+    # XXX: with support for custom delimiters, this does not work very well
+    elsif ( $mac =~ /[g-z]/i ) {
         $self->error(
             "discovery of MAC address metadata failed, invalid characters in MAC address \"$mac\""
         );
@@ -232,6 +280,7 @@ sub _discover {
 sub _find_delimiter {
     my ($self) = @_;
     my $mac = $self->get_mac();
+    # XXX: why not just look for any non hexadec char?
     if ( $mac =~ /(:|\.|\-|\s)/g ) {    # Found a delimiter
         $self->set_delimiter($1);
         $self->verbose("setting attribute \"delimiter\" to \"$1\"");
@@ -559,11 +608,19 @@ sub error {
 
 1;                                     # Necessary for usage statement
 
+# ABSTRACT: Perl extension for representing and manipulating MAC addresses 
+
+
 __END__
+=pod
 
 =head1 NAME
 
 Net::MAC - Perl extension for representing and manipulating MAC addresses 
+
+=head1 VERSION
+
+version 1.103621
 
 =head1 SYNOPSIS
 
@@ -630,6 +687,9 @@ The new() method creates a new Net::MAC object.  Possible arguments are
   zero_padded   whether bit groups have leading zero characters
                 (Net::MAC only allows zero-padding for bit groups of 8 bits)
                 possible values: 0 1 
+  format        the name of a MAC address format specification which takes
+                the place of the base,delimiter,bit_group and zero_padded
+                options above
   verbose       write informational messages (useful for debugging)
                 possible values: 0 1
   die           die() on invalid MAC address (default is to die on invalid MAC) 
@@ -652,6 +712,39 @@ a hint, like so:
 
 This is necessary for cases like the one above, where the class has no way 
 of knowing that an address is decimal instead of hexadecimal.  
+
+If you have installed a custom MAC address format into the class (see below)
+then you can also pass the C<format> option as a hint:
+
+  my $mac = Net::MAC->new('mac' => 'ab01~ab01~ab01', 'format' => 'My_Format');
+
+=head2 class methods
+
+=head3 set_format_for()
+
+When discovering MAC address formats, and converting between different
+formats (using C<convert> or C<as_*>) the module can use predefined common
+formats or you can install your own for local circumstances.
+
+For example consider a fictional device which uses MAC addresses formatted
+like C<ab01~ab01~ab01>, which would otherwise not be understood. You can
+install a new Format for this address style:
+
+  Net::MAC->set_format_for( 'My_Format_Name' => {
+      base => 16,
+      bit_group => 16,
+      delimiter => '~',
+  });
+
+Now when using either the C<format> option to C<new()>, or the C<convert()> or
+C<as_*> methods, the module will recognise this new format C<My_Format_Name>.
+The Hashref supplied can include any of the standard options for formats as
+listed elsewhere in this documentation.
+
+  my $mac = Net::MAC->new('mac' => 'ab01~ab01~ab01', 'format' => 'My_Format_Name');
+
+Custom formats sharing the same name as one shipping with the module (such as
+C<Cisco>) will override that built-in format.
 
 =head2 accessor methods
 
@@ -816,34 +909,25 @@ Case is however altered when using the as_foo() formatted output methods.
 Net::MacMap
 Net::MAC::Vendor
 
-=head1 AUTHOR
-
-Karl Ward E<lt>karlward@cpan.orgE<gt>
-
 =head1 MAINTAINER
 
-Oliver Gorwits E<lt>oliver.gorwits@oucs.ox.ac.ukE<gt>
+Oliver Gorwits <oliver@cpan.org>
 
 =head1 CONTRIBUTORS 
 
 Oliver Gorwits, Robin Crook, Kevin Brintnall
 
+=head1 AUTHOR
+
+Karl Ward <karlward@cpan.org>
+
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2005-2008 Karl Ward E<lt>karlward@cpan.orgE<gt>
+This software is Copyright (c) 2010 by Karl Ward <karlward@cpan.org>.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+This is free software, licensed under:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+  The GNU General Public License, Version 2, June 1991
 
 =cut
+

@@ -1,4 +1,4 @@
-# $Id: bulk10.t 135 2008-03-30 18:20:42Z oliver $
+# $Id$
 
 # This is a Test::More test script for Net::MAC.  This script should be 
 # runnable with `make test'.
